@@ -1,73 +1,234 @@
 ﻿using System;
 using System.Net.Http;
 using System.Net.Http.Json;
-using System.Net.Security;
-using System.Security.Cryptography.X509Certificates;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using AuthClient.Models;
-using static System.Runtime.InteropServices.JavaScript.JSType;
+using Microsoft.AspNetCore.SignalR.Client;
 
-namespace AuthClient
+namespace ConsoleClient
 {
-    public class Program
+    class Program
     {
-        private static readonly HttpClientHandler httpClientHandler = new HttpClientHandler
+        static readonly string LoginUri = "api/auth/login";
+        static readonly string RegisterUri = "api/auth/register";
+        static readonly string CheckNotificationUri = "api/auth/checkNotification";
+        static readonly string HubConnectionUri = "https://localhost:5001/notificationHub";
+        static readonly string Localhost = "https://localhost:5001";
+
+        static async Task Main(string[] args)
         {
-            ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => { return true; }
-        };
-
-        private static readonly HttpClient client = new HttpClient(httpClientHandler)
-        {
-            BaseAddress = new Uri("https://localhost:7208/api/")
-        };
-
-        public static async Task Main(string[] args)
-        {
-            while (true)
-            {
-                await Login();
-
-                Console.WriteLine("Do you want to try again? (yes/no)");
-                var answer = Console.ReadLine()?.ToLower();
-                if (answer != "yes")
-                {
-                    break;
-                }
-            }
-        }
-    
-        private static async Task Login()
-        {
-            Console.WriteLine("Enter your username:");
-            var username = Console.ReadLine();
-
-            Console.WriteLine("Enter your password:");
-            var password = Console.ReadLine();
-
-            Console.WriteLine("Logining in...");
-
-            var loginRequest = new LoginRequest { Username = username, Password = password };
-
             try
             {
-                var response = await client.PostAsJsonAsync("auth/login", loginRequest);
+                var connection = new HubConnectionBuilder()
+                .WithUrl(HubConnectionUri)
+                .WithAutomaticReconnect()
+                .Build();
+
+                connection.Closed += async (error) =>
+                {
+                    Console.WriteLine("Connection closed. Reconnecting...");
+                    await Task.Delay(1000);
+                    await connection.StartAsync();
+                };
+
+                try
+                {
+                    connection.On<string, string>("ReceiveNotification", (user, message) =>
+                    {
+                        Console.WriteLine($"Notification for {user}: {message}");
+                    });
+
+                    await connection.StartAsync();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"connection failed");
+                    Console.WriteLine($"Error Message: {ex.Message}");
+                }
+
+                await ShowStartMenu();
+
+                await connection.StopAsync();
+            }
+            catch (Exception ex) 
+            {
+                Console.WriteLine(ex.Message);
+            }
+        }
+
+        public static async Task LoginAsync()
+        {
+            using var client = new HttpClient();
+            client.BaseAddress = new Uri(Localhost);
+
+            while (true)
+            {
+                Console.WriteLine("Enter your username:");
+                var username = Console.ReadLine();
+
+                Console.WriteLine("Enter your password:");
+                var password = Console.ReadLine();
+
+                var loginRequest = new LoginRequest()
+                {
+                    Username = username,
+                    Password = password
+                };
+
+                var response = await client.PostAsJsonAsync(LoginUri, loginRequest);
+
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<LoginResponse>();
-                    Console.WriteLine($"Welcome, {result.User.Username}! Email: {result.User.Email}");
+                    var content = await response.Content.ReadAsStringAsync();
+                    
+                    Console.WriteLine(content);
+
+                    var user = new LoginResponse(content).User;
+                    await ShowMenu(user);
+
+                    break;
                 }
                 else
                 {
-                    var error = await response.Content.ReadFromJsonAsync<ErrorResponse>();
-                    Console.WriteLine($"Error: {error.Message}");
+                    Console.WriteLine("Login failed, try again.");
                 }
             }
-            catch (HttpRequestException e)
+        }
+
+        public static async Task Logout()
+        {
+            await ShowStartMenu();
+        }
+        public static async Task Register()
+        {
+            using var client = new HttpClient();
+            client.BaseAddress = new Uri(Localhost);
+
+            while (true)
             {
-                Console.WriteLine($"Request error: {e.Message}");
+                Console.WriteLine("Enter your username:");
+                var username = Console.ReadLine();
+
+                Console.WriteLine("Enter your email:");
+                var email = Console.ReadLine();
+
+                Console.WriteLine("Enter your password:");
+                var password = Console.ReadLine();
+
+                var registerRequest = new User()
+                {
+                    Username = username,
+                    Email = email,
+                    Password = password
+                };
+
+                var response = await client.PostAsJsonAsync(RegisterUri, registerRequest);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+
+                    Console.WriteLine(content);
+
+                    var user = new LoginResponse(content).User;
+                    await ShowMenu(user);
+
+                    break;
+                }
+                else
+                {
+                    Console.WriteLine("Register failed, try again.");
+                }
+            }
+        }
+        public static async Task CheckNotification(int userId)
+        {
+            using var client = new HttpClient();
+            client.BaseAddress = new Uri(Localhost);
+
+            var response = await client.PostAsJsonAsync(CheckNotificationUri, userId);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var content = await response.Content.ReadAsStringAsync();
+                
+                Console.WriteLine(content.Replace("_@", Environment.NewLine));
+
+                var user = new LoginResponse(content).User;
+                await ShowMenu(user);
+            }
+            else
+            {
+                Console.WriteLine("Failed, try again.");
+                Console.WriteLine("");
+            }
+        }
+        public static async Task ShowMenu(User user)
+        {
+            while (true)
+            {
+                Console.WriteLine($"Hello {user.Username}");
+                Console.WriteLine("Menu:");
+                Console.WriteLine("1. Check Notifications");
+                Console.WriteLine("2. Logout");
+                Console.WriteLine("3. Exit");
+                Console.Write("Select an option: ");
+
+                var choice = Console.ReadLine();
+                switch (choice)
+                {
+                    case "1":
+                        Console.WriteLine("Check Notifications selected \n");
+                        await CheckNotification(user.Id);
+                        break;
+                    case "2":
+                        Console.WriteLine("Logout selected  \n");
+                        await Logout();
+                        break;
+                    case "3":
+                        Console.WriteLine("Exiting...");
+                        Environment.Exit(0);
+                        return;
+                    default:
+                        Console.WriteLine("Invalid choice, try again.  \n");
+                        break;
+                }
+            }
+        }
+
+        public static async Task ShowStartMenu()
+        {
+            while (true)
+            {
+                Console.WriteLine("Start Menu:");
+                Console.WriteLine("1. Login");
+                Console.WriteLine("2. Register");
+                Console.WriteLine("3. Exit");
+                Console.Write("Select an option: ");
+
+                var choice = Console.ReadLine();
+                switch (choice)
+                {
+                    case "1":
+                        Console.WriteLine("Login selected  \n");
+                        await LoginAsync();
+                        break;
+                    case "2":
+                        Console.WriteLine("Register selected  \n");
+                        await Register();
+                        break;
+                    case "3":
+                        Console.WriteLine("Exiting...");
+                        Environment.Exit(0);
+                        return; 
+                    default:
+                        Console.WriteLine("Invalid choice, try again.  \n");
+                        break;
+                }
             }
         }
     }
-
-    
 }
