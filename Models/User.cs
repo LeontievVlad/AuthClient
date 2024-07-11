@@ -35,11 +35,6 @@ namespace AuthClient.Models
         }
     }
 
-    public class ErrorResponse
-    {
-        public string Message { get; set; }
-    }
-
     public class User
     {
         public int Id { get; set; }

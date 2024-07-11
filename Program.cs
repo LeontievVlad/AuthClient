@@ -15,13 +15,16 @@ namespace ConsoleClient
         static readonly string LoginUri = "api/auth/login";
         static readonly string RegisterUri = "api/auth/register";
         static readonly string CheckNotificationUri = "api/auth/checkNotification";
+        static readonly string HubConnectionUri = "https://localhost:5001/notificationHub";
+        static readonly string Localhost = "https://localhost:5001";
+
         static async Task Main(string[] args)
         {
             try
             {
                 var connection = new HubConnectionBuilder()
-                .WithUrl("https://localhost:5001/notificationHub")
-                .WithAutomaticReconnect(new[] { TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(20) })
+                .WithUrl(HubConnectionUri)
+                .WithAutomaticReconnect()
                 .Build();
 
                 connection.Closed += async (error) =>
@@ -43,6 +46,7 @@ namespace ConsoleClient
                 catch (Exception ex)
                 {
                     Console.WriteLine($"connection failed");
+                    Console.WriteLine($"Error Message: {ex.Message}");
                 }
 
                 await ShowStartMenu();
@@ -58,7 +62,7 @@ namespace ConsoleClient
         public static async Task LoginAsync()
         {
             using var client = new HttpClient();
-            client.BaseAddress = new Uri("https://localhost:5001");
+            client.BaseAddress = new Uri(Localhost);
 
             while (true)
             {
@@ -101,7 +105,7 @@ namespace ConsoleClient
         public static async Task Register()
         {
             using var client = new HttpClient();
-            client.BaseAddress = new Uri("https://localhost:5001");
+            client.BaseAddress = new Uri(Localhost);
 
             while (true)
             {
@@ -143,7 +147,7 @@ namespace ConsoleClient
         public static async Task CheckNotification(int userId)
         {
             using var client = new HttpClient();
-            client.BaseAddress = new Uri("https://localhost:5001");
+            client.BaseAddress = new Uri(Localhost);
 
             var response = await client.PostAsJsonAsync(CheckNotificationUri, userId);
 
